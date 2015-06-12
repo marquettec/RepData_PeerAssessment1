@@ -1,25 +1,161 @@
 ---
 title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+output: html_document
+keep_md: true
 ---
 
+First loading needed libraries
+
+```{r echo=TRUE}
+library(data.table)
+library(ggplot2)
+library(lattice)
+library(knitr)
+```
 
 ## Loading and preprocessing the data
 
+Now loading data, and converting date field to Date
 
+```{r echo=TRUE}
+if (!file.exists('./activity.csv')) {
+  unzip('activity.zip', exdir='.')
+}
+data <- read.csv('activity.csv')
+data$date <- as.Date(data$date, '%Y-%m-%d')
+summary(data)
+```
 
 ## What is mean total number of steps taken per day?
 
+For now, we'll ignore NA row  
+Then, preapring data for graphing steps sum by date
 
+```{r echo=TRUE}
+cleanData <- data[complete.cases(data),]
+summary(cleanData)
+
+cleanDataDT <- data.table(cleanData)
+stepsByDayDT <- cleanDataDT[, sum(steps), by = date]
+setnames(stepsByDayDT,"V1","stepSum")
+summary(stepsByDayDT)
+```
+
+Graphing 
+```{r echo=TRUE}
+p <- ggplot(data=stepsByDayDT, aes(x=date, y=stepSum)) + geom_histogram(stat='identity', colour="black", fill='blue') + ggtitle('Steps Sum by Date') + xlab('Date') + ylab('Steps Sum')
+print(p)
+```
+
+Next step is to see how Steps sum mean and median looks like 
+
+```{r echo=TRUE}
+mean(stepsByDayDT$stepSum)
+```
+
+```{r echo=TRUE}
+median(stepsByDayDT$stepSum)
+```
 
 ## What is the average daily activity pattern?
 
+Looking at Daily mean steps activity, by measure interval 
 
+- Preparing data
+- Having a look at data
+- Plotting 
+
+```{r echo=TRUE}
+dataDT <- data.table(cleanData)
+head(dataDT)
+intervalDT <- dataDT[, mean(steps), by = interval]
+setnames(intervalDT,"V1","stepAvg")
+summary(intervalDT)
+plot(intervalDT$interval, intervalDT$stepAvg, type="l", main='Global average steps by interval (5 mins)', xlab= "Interval", ylab= "Average steps", col="blue" , lwd=2)
+```
+
+What is the interval having max average steps activity
+
+```{r echo=TRUE}
+#intervalDT$interval[which.max(intervalDT$stepAvg)]
+sorted <- intervalDT[order(-stepAvg)]
+sorted[1,]
+```
 
 ## Imputing missing values
 
+Checking missing values  
 
+Overall check
+```{r echo=TRUE}
+sum(is.na(data))
+```
+
+Column by column check
+```{r echo=TRUE}
+colSums(is.na(data))
+```
+
+Preparing data
+```{r echo=TRUE}
+intervalDT <- dataDT[, mean(steps), by = interval]
+setnames(intervalDT,"V1","stepAvg")
+```
+
+Setting up strategy for **Imputing** missing values  
+Decision is to get overall average intervals for the step through dataset
+```{r echo=TRUE}
+df <- data
+for (i in 1:nrow(df)) {
+    if (is.na(df$steps[i])) {
+        df$steps[i] <- intervalDT[which(df$interval[i] == intervalDT$interval), ]$stepAvg
+    }
+}
+head(df)
+```
+
+Imputing missing data
+```{r echo=TRUE}
+dfDT <- data.table(df)
+imputedData <- dfDT[, sum(steps), by = date]
+setnames(imputedData,"V1","stepSum")
+p <- ggplot(data=imputedData, aes(x=date, y=stepSum)) + geom_histogram(stat='identity', colour="black", fill='blue')+ ggtitle('Steps Sum by Date (mean imputed)') + xlab('Date') + ylab('Steps Sum')
+print(p)
+```
+No real difference once data imputed, which makes sense as long as we imputed mean value
+
+Checking for mean steps once missing data imputed
+```{r echo=TRUE}
+mean(imputedData$stepSum)
+```
+Doesn't seem to change data 
+
+Checking for median steps once missing data imputed
+```{r echo=TRUE}
+median(imputedData$stepSum)
+```
+Doesn't seem to change data 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+Preparing data for Week days vs Weekend days activity comparison
+
+- Adding new column
+- Transforming this new column to Factor
+```{r echo=TRUE}
+Sys.setlocale("LC_TIME","en_US")
+dfDT$dayType <- ifelse(weekdays(dfDT$date) %in% c('Saturday', 'Sunday'), 'weekend', 'weekday')
+dfDT$dayType <- as.factor(dfDT$dayType)
+summary(dfDT$dayType)
+```
+
+Graphing results
+```{r echo=TRUE}
+stepsByDayType <- aggregate(steps ~ interval + dayType, dfDT, mean)
+p<-xyplot(stepsByDayType$steps ~ stepsByDayType$interval|stepsByDayType$dayType, main="Average Steps per Interval (Weekend and Weekday comparison)",xlab="Interval", ylab="Steps",layout=c(1,2), type="l")
+print(p)
+```
+
+Obviously weekend vs week days activity is quite different
+
+knit2html('PA1_template.Rmd')
